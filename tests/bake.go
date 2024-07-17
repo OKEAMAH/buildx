@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/docker/buildx/util/gitutil"
+	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
 	provenancetypes "github.com/moby/buildkit/solver/llbsolver/provenance/types"
 	"github.com/moby/buildkit/util/contentutil"
@@ -42,9 +44,15 @@ var bakeTests = []func(t *testing.T, sb integration.Sandbox){
 	testBakeEmpty,
 	testBakeShmSize,
 	testBakeUlimits,
-	testBakeMetadata,
+	testBakeMetadataProvenance,
+	testBakeMetadataWarnings,
+	testBakeMetadataWarningsDedup,
 	testBakeMultiExporters,
 	testBakeLoadPush,
+	testListTargets,
+	testListVariables,
+	testBakeCallCheck,
+	testBakeCallCheckFlag,
 }
 
 func testBakeLocal(t *testing.T, sb integration.Sandbox) {
@@ -633,19 +641,22 @@ target "default" {
 	require.Contains(t, string(dt), `1024`)
 }
 
-func testBakeMetadata(t *testing.T, sb integration.Sandbox) {
+func testBakeMetadataProvenance(t *testing.T, sb integration.Sandbox) {
+	t.Run("default", func(t *testing.T) {
+		bakeMetadataProvenance(t, sb, "")
+	})
 	t.Run("max", func(t *testing.T) {
-		bakeMetadata(t, sb, "max")
+		bakeMetadataProvenance(t, sb, "max")
 	})
 	t.Run("min", func(t *testing.T) {
-		bakeMetadata(t, sb, "min")
+		bakeMetadataProvenance(t, sb, "min")
 	})
 	t.Run("disabled", func(t *testing.T) {
-		bakeMetadata(t, sb, "disabled")
+		bakeMetadataProvenance(t, sb, "disabled")
 	})
 }
 
-func bakeMetadata(t *testing.T, sb integration.Sandbox, metadataMode string) {
+func bakeMetadataProvenance(t *testing.T, sb integration.Sandbox, metadataMode string) {
 	dockerfile := []byte(`
 FROM scratch
 COPY foo /foo
@@ -676,7 +687,7 @@ target "default" {
 		withEnv("BUILDX_METADATA_PROVENANCE="+metadataMode),
 	)
 	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, out)
+	require.NoError(t, err, string(out))
 
 	dt, err := os.ReadFile(filepath.Join(dirDest, "md.json"))
 	require.NoError(t, err)
@@ -704,6 +715,130 @@ target "default" {
 	var prv provenancetypes.ProvenancePredicate
 	require.NoError(t, json.Unmarshal(dtprv, &prv))
 	require.Equal(t, provenancetypes.BuildKitBuildType, prv.BuildType)
+}
+
+func testBakeMetadataWarnings(t *testing.T, sb integration.Sandbox) {
+	t.Run("default", func(t *testing.T) {
+		bakeMetadataWarnings(t, sb, "")
+	})
+	t.Run("true", func(t *testing.T) {
+		bakeMetadataWarnings(t, sb, "true")
+	})
+	t.Run("false", func(t *testing.T) {
+		bakeMetadataWarnings(t, sb, "false")
+	})
+}
+
+func bakeMetadataWarnings(t *testing.T, sb integration.Sandbox, mode string) {
+	dockerfile := []byte(`
+frOM busybox as base
+cOpy Dockerfile .
+from scratch
+COPy --from=base \
+  /Dockerfile \
+  /
+	`)
+	bakefile := []byte(`
+target "default" {
+}
+`)
+	dir := tmpdir(
+		t,
+		fstest.CreateFile("docker-bake.hcl", bakefile, 0600),
+		fstest.CreateFile("Dockerfile", dockerfile, 0600),
+	)
+
+	dirDest := t.TempDir()
+
+	cmd := buildxCmd(
+		sb,
+		withDir(dir),
+		withArgs("bake", "--metadata-file", filepath.Join(dirDest, "md.json"), "--set", "*.output=type=cacheonly"),
+		withEnv("BUILDX_METADATA_WARNINGS="+mode),
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	dt, err := os.ReadFile(filepath.Join(dirDest, "md.json"))
+	require.NoError(t, err)
+
+	type mdT struct {
+		BuildWarnings []client.VertexWarning `json:"buildx.build.warnings"`
+		Default       struct {
+			BuildRef string `json:"buildx.build.ref"`
+		} `json:"default"`
+	}
+	var md mdT
+	err = json.Unmarshal(dt, &md)
+	require.NoError(t, err, string(dt))
+
+	require.NotEmpty(t, md.Default.BuildRef, string(dt))
+	if mode == "" || mode == "false" {
+		require.Empty(t, md.BuildWarnings, string(dt))
+		return
+	}
+
+	skipNoCompatBuildKit(t, sb, ">= 0.14.0-0", "lint")
+	require.Len(t, md.BuildWarnings, 3, string(dt))
+}
+
+func testBakeMetadataWarningsDedup(t *testing.T, sb integration.Sandbox) {
+	dockerfile := []byte(`
+frOM busybox as base
+cOpy Dockerfile .
+from scratch
+COPy --from=base \
+  /Dockerfile \
+  /
+	`)
+	bakefile := []byte(`
+group "default" {
+  targets = ["base", "def"]
+}
+target "base" {
+  target = "base"
+}
+target "def" {
+}
+`)
+	dir := tmpdir(
+		t,
+		fstest.CreateFile("docker-bake.hcl", bakefile, 0600),
+		fstest.CreateFile("Dockerfile", dockerfile, 0600),
+	)
+
+	dirDest := t.TempDir()
+
+	cmd := buildxCmd(
+		sb,
+		withDir(dir),
+		withArgs("bake", "--metadata-file", filepath.Join(dirDest, "md.json"), "--set", "*.output=type=cacheonly"),
+		withEnv("BUILDX_METADATA_WARNINGS=true"),
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	dt, err := os.ReadFile(filepath.Join(dirDest, "md.json"))
+	require.NoError(t, err)
+
+	type mdT struct {
+		BuildWarnings []client.VertexWarning `json:"buildx.build.warnings"`
+		Base          struct {
+			BuildRef string `json:"buildx.build.ref"`
+		} `json:"base"`
+		Def struct {
+			BuildRef string `json:"buildx.build.ref"`
+		} `json:"def"`
+	}
+	var md mdT
+	err = json.Unmarshal(dt, &md)
+	require.NoError(t, err, string(dt))
+
+	require.NotEmpty(t, md.Base.BuildRef, string(dt))
+	require.NotEmpty(t, md.Def.BuildRef, string(dt))
+
+	skipNoCompatBuildKit(t, sb, ">= 0.14.0-0", "lint")
+	require.Len(t, md.BuildWarnings, 3, string(dt))
 }
 
 func testBakeMultiExporters(t *testing.T, sb integration.Sandbox) {
@@ -820,4 +955,165 @@ target "default" {
 	require.NoError(t, cmd.Run())
 
 	// TODO: test metadata file when supported by multi exporters https://github.com/docker/buildx/issues/2181
+}
+
+func testListTargets(t *testing.T, sb integration.Sandbox) {
+	bakefile := []byte(`
+target "foo" {
+	description = "This builds foo"
+}
+target "abc" {
+}
+`)
+	dir := tmpdir(
+		t,
+		fstest.CreateFile("docker-bake.hcl", bakefile, 0600),
+	)
+
+	out, err := bakeCmd(
+		sb,
+		withDir(dir),
+		withArgs("--list-targets"),
+	)
+	require.NoError(t, err, out)
+
+	require.Equal(t, "TARGET\tDESCRIPTION\nabc\t\nfoo\tThis builds foo", strings.TrimSpace(out))
+}
+
+func testListVariables(t *testing.T, sb integration.Sandbox) {
+	bakefile := []byte(`
+variable "foo" {
+	default = "bar"
+	description = "This is foo"
+}
+variable "abc" {
+	default = null
+}
+variable "def" {
+}
+target "default" {
+}
+`)
+	dir := tmpdir(
+		t,
+		fstest.CreateFile("docker-bake.hcl", bakefile, 0600),
+	)
+
+	out, err := bakeCmd(
+		sb,
+		withDir(dir),
+		withArgs("--list-variables"),
+	)
+	require.NoError(t, err, out)
+
+	require.Equal(t, "VARIABLE\tVALUE\tDESCRIPTION\nabc\t\t<null>\t\ndef\t\t\t\nfoo\t\tbar\tThis is foo", strings.TrimSpace(out))
+}
+
+func testBakeCallCheck(t *testing.T, sb integration.Sandbox) {
+	dockerfile := []byte(`
+FROM scratch
+COPy foo /foo
+	`)
+	bakefile := []byte(`
+target "validate" {
+	call = "check"
+}
+`)
+	dir := tmpdir(
+		t,
+		fstest.CreateFile("docker-bake.hcl", bakefile, 0600),
+		fstest.CreateFile("Dockerfile", dockerfile, 0600),
+	)
+
+	out, err := bakeCmd(
+		sb,
+		withDir(dir),
+		withArgs("validate"),
+	)
+	require.Error(t, err, out)
+
+	require.Contains(t, out, "validate")
+	require.Contains(t, out, "ConsistentInstructionCasing")
+}
+
+func testBakeCallCheckFlag(t *testing.T, sb integration.Sandbox) {
+	dockerfile := []byte(`
+FROM scratch
+COPy foo /foo
+	`)
+	dockerfile2 := []byte(`
+FROM scratch
+COPY foo$BAR /foo
+		`)
+	bakefile := []byte(`
+target "build" {
+	dockerfile = "a.Dockerfile"
+}
+
+target "another" {
+	dockerfile = "b.Dockerfile"
+}
+`)
+	dir := tmpdir(
+		t,
+		fstest.CreateFile("docker-bake.hcl", bakefile, 0600),
+		fstest.CreateFile("a.Dockerfile", dockerfile, 0600),
+		fstest.CreateFile("b.Dockerfile", dockerfile2, 0600),
+	)
+
+	out, err := bakeCmd(
+		sb,
+		withDir(dir),
+		withArgs("build", "another", "--check"),
+	)
+	require.Error(t, err, out)
+
+	require.Contains(t, out, "build")
+	require.Contains(t, out, "ConsistentInstructionCasing")
+
+	require.Contains(t, out, "another")
+	require.Contains(t, out, "UndefinedVar")
+
+	cmd := buildxCmd(
+		sb,
+		withDir(dir),
+		withArgs("bake", "--progress=quiet", "build", "another", "--call", "check,format=json"),
+	)
+	outB, err := cmd.Output()
+	require.Error(t, err, string(outB))
+
+	var res map[string]any
+	err = json.Unmarshal(outB, &res)
+	require.NoError(t, err, out)
+
+	targets, ok := res["target"].(map[string]any)
+	require.True(t, ok)
+
+	build, ok := targets["build"].(map[string]any)
+	require.True(t, ok)
+
+	_, ok = build["build"]
+	require.True(t, ok)
+
+	check, ok := build["check"].(map[string]any)
+	require.True(t, ok)
+
+	warnings, ok := check["warnings"].([]any)
+	require.True(t, ok)
+
+	require.Len(t, warnings, 1)
+
+	another, ok := targets["another"].(map[string]any)
+	require.True(t, ok)
+
+	_, ok = another["build"]
+	require.True(t, ok)
+
+	check, ok = another["check"].(map[string]any)
+	require.True(t, ok)
+
+	warnings, ok = check["warnings"].([]any)
+	require.True(t, ok)
+
+	require.Len(t, warnings, 1)
 }

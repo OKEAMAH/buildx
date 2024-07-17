@@ -22,7 +22,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
           version: latest
       -
         name: Build
-        uses: docker/bake-action@v4
+        uses: docker/bake-action@v5
         with:
           targets: binaries
           set: |
@@ -84,6 +84,8 @@ jobs:
             endpoint: tcp://localhost:1234
           - driver: docker-container
             metadata-provenance: max
+          - driver: docker-container
+            metadata-warnings: true
         exclude:
           - driver: docker
             multi-node: mnode-true
@@ -133,6 +135,9 @@ jobs:
           fi
           if [ -n "${{ matrix.metadata-provenance }}" ]; then
             echo "BUILDX_METADATA_PROVENANCE=${{ matrix.metadata-provenance }}" >> $GITHUB_ENV
+          fi
+          if [ -n "${{ matrix.metadata-warnings }}" ]; then
+            echo "BUILDX_METADATA_WARNINGS=${{ matrix.metadata-warnings }}" >> $GITHUB_ENV
           fi
       -
         name: Install k3s

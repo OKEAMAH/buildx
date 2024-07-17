@@ -26,16 +26,17 @@ env:
   TEST_CACHE_SCOPE: "test"
   TESTFLAGS: "-v --parallel=6 --timeout=30m"
   GOTESTSUM_FORMAT: "standard-verbose"
-  GO_VERSION: "1.21"
+  GO_VERSION: "1.22"
   GOTESTSUM_VERSION: "v1.9.0"  # same as one in Dockerfile
 
 jobs:
   test-integration:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       TESTFLAGS_DOCKER: "-v --parallel=1 --timeout=30m"
       TEST_IMAGE_BUILD: "0"
       TEST_IMAGE_ID: "buildx-tests"
+      TEST_COVERAGE: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -43,9 +44,9 @@ jobs:
           - master
           - latest
           - buildx-stable-1
-          - v0.13.1
+          - v0.14.1
+          - v0.13.2
           - v0.12.5
-          - v0.11.6
         worker:
           - docker-container
           - remote
@@ -105,7 +106,7 @@ jobs:
           buildkitd-flags: --debug
       -
         name: Build test image
-        uses: docker/bake-action@v4
+        uses: docker/bake-action@v5
         with:
           targets: integration-test
           set: |
@@ -125,6 +126,7 @@ jobs:
           directory: ./bin/testreports
           flags: integration
           token: ${{ secrets.CODECOV_TOKEN }}
+          disable_file_fixes: true
       -
         name: Generate annotations
         if: always()
@@ -145,7 +147,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-22.04
+          - ubuntu-24.04
           - macos-12
           - windows-2022
     env:
@@ -197,6 +199,7 @@ jobs:
           env_vars: RUNNER_OS
           flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
+          disable_file_fixes: true
       -
         name: Generate annotations
         if: always()
@@ -212,7 +215,7 @@ jobs:
           path: ${{ env.TESTREPORTS_BASEDIR }}
 
   prepare-binaries:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
@@ -230,7 +233,7 @@ jobs:
           echo ${{ steps.platforms.outputs.matrix }}
 
   binaries:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - prepare-binaries
     strategy:
@@ -273,7 +276,7 @@ jobs:
           if-no-files-found: error
 
   bin-image:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - test-integration
       - test-unit
@@ -313,7 +316,7 @@ jobs:
           password: ${{ secrets.DOCKERPUBLICBOT_WRITE_PAT }}
       -
         name: Build and push image
-        uses: docker/bake-action@v4
+        uses: docker/bake-action@v5
         with:
           files: |
             ./docker-bake.hcl
@@ -326,7 +329,7 @@ jobs:
             *.cache-to=type=gha,scope=bin-image,mode=max
 
   release:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - test-integration
       - test-unit
@@ -356,7 +359,7 @@ jobs:
       -
         name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@69320dbe05506a9a39fc8ae11030b214ec2d1f87  # v2.0.5
+        uses: softprops/action-gh-release@a74c6b72af54cfa997e81df42d94703d6313a2d0  # v2.0.6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

@@ -29,7 +29,6 @@ import (
 	"github.com/compose-spec/compose-go/v2/errdefs"
 	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/distribution/reference"
-	"github.com/mitchellh/copystructure"
 	godigest "github.com/opencontainers/go-digest"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -646,11 +645,13 @@ func (p Project) WithServicesEnvironmentResolved(discardEnvFiles bool) (*Project
 }
 
 func (p *Project) deepCopy() *Project {
-	instance, err := copystructure.Copy(p)
-	if err != nil {
-		panic(err)
+	if p == nil {
+		return nil
 	}
-	return instance.(*Project)
+	n := &Project{}
+	deriveDeepCopyProject(n, p)
+	return n
+
 }
 
 // WithServicesTransform applies a transformation to project services and return a new project with transformation results
@@ -659,12 +660,12 @@ func (p *Project) WithServicesTransform(fn func(name string, s ServiceConfig) (S
 		name    string
 		service ServiceConfig
 	}
-	resultCh := make(chan result)
+	expect := len(p.Services)
+	resultCh := make(chan result, expect)
 	newProject := p.deepCopy()
 
 	eg, ctx := errgroup.WithContext(context.Background())
 	eg.Go(func() error {
-		expect := len(newProject.Services)
 		s := Services{}
 		for expect > 0 {
 			select {
@@ -695,4 +696,18 @@ func (p *Project) WithServicesTransform(fn func(name string, s ServiceConfig) (S
 		})
 	}
 	return newProject, eg.Wait()
+}
+
+// CheckContainerNameUnicity validate project doesn't have services declaring the same container_name
+func (p *Project) CheckContainerNameUnicity() error {
+	names := utils.Set[string]{}
+	for name, s := range p.Services {
+		if s.ContainerName != "" {
+			if existing, ok := names[s.ContainerName]; ok {
+				return fmt.Errorf(`services.%s: container name %q is already in use by service %s"`, name, s.ContainerName, existing)
+			}
+			names.Add(s.ContainerName)
+		}
+	}
+	return nil
 }

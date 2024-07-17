@@ -13,11 +13,11 @@ permissions:
   security-events: write
 
 env:
-  GO_VERSION: "1.21"
+  GO_VERSION: "1.22"
 
 jobs:
   codeql:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       -
         name: Checkout

@@ -838,7 +838,8 @@ func TestReadContextFromTargetChain(t *testing.T) {
 
 	mid, ok := m["mid"]
 	require.True(t, ok)
-	require.Equal(t, 0, len(mid.Outputs))
+	require.Equal(t, 1, len(mid.Outputs))
+	require.Equal(t, "type=cacheonly", mid.Outputs[0])
 	require.Equal(t, 1, len(mid.Contexts))
 
 	base, ok := m["base"]
@@ -1528,7 +1529,7 @@ services:
         v2: "bar"
 `)
 
-	c, err := ParseFiles([]File{
+	c, _, err := ParseFiles([]File{
 		{Data: dt, Name: "c1.foo"},
 		{Data: dt2, Name: "c2.bar"},
 	}, nil)

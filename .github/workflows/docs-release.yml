@@ -12,7 +12,7 @@ on:
 
 jobs:
   open-pr:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: ${{ (github.event.release.prerelease != true || github.event.inputs.tag != '') && github.repository == 'docker/buildx' }}
     steps:
       -
@@ -36,7 +36,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       -
         name: Generate yaml
-        uses: docker/bake-action@v4
+        uses: docker/bake-action@v5
         with:
           source: ${{ github.server_url }}/${{ github.repository }}.git#${{ env.RELEASE_NAME }}
           targets: update-docs
@@ -57,7 +57,7 @@ jobs:
           VENDOR_MODULE: github.com/docker/buildx@${{ env.RELEASE_NAME }}
       -
         name: Create PR on docs repo
-        uses: peter-evans/create-pull-request@6d6857d36972b65feb161a90e484f2984215f83e  # v6.0.5
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c  # v6.1.0
         with:
           token: ${{ secrets.GHPAT_DOCS_DISPATCH }}
           push-to-fork: docker-tools-robot/docker.github.io

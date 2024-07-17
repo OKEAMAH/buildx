@@ -13,20 +13,22 @@ Build from a file
 
 ### Options
 
-| Name                                | Type          | Default | Description                                                                              |
-|:------------------------------------|:--------------|:--------|:-----------------------------------------------------------------------------------------|
-| [`--builder`](#builder)             | `string`      |         | Override the configured builder instance                                                 |
-| [`-f`](#file), [`--file`](#file)    | `stringArray` |         | Build definition file                                                                    |
-| `--load`                            |               |         | Shorthand for `--set=*.output=type=docker`                                               |
-| [`--metadata-file`](#metadata-file) | `string`      |         | Write build result metadata to a file                                                    |
-| [`--no-cache`](#no-cache)           |               |         | Do not use cache when building the image                                                 |
-| [`--print`](#print)                 |               |         | Print the options without building                                                       |
-| [`--progress`](#progress)           | `string`      | `auto`  | Set type of progress output (`auto`, `plain`, `tty`). Use plain to show container output |
-| [`--provenance`](#provenance)       | `string`      |         | Shorthand for `--set=*.attest=type=provenance`                                           |
-| [`--pull`](#pull)                   |               |         | Always attempt to pull all referenced images                                             |
-| `--push`                            |               |         | Shorthand for `--set=*.output=type=registry`                                             |
-| [`--sbom`](#sbom)                   | `string`      |         | Shorthand for `--set=*.attest=type=sbom`                                                 |
-| [`--set`](#set)                     | `stringArray` |         | Override target value (e.g., `targetpattern.key=value`)                                  |
+| Name                                | Type          | Default | Description                                                                                         |
+|:------------------------------------|:--------------|:--------|:----------------------------------------------------------------------------------------------------|
+| [`--builder`](#builder)             | `string`      |         | Override the configured builder instance                                                            |
+| [`--call`](#call)                   | `string`      | `build` | Set method for evaluating build (`check`, `outline`, `targets`)                                     |
+| [`--check`](#check)                 | `bool`        |         | Shorthand for `--call=check`                                                                        |
+| [`-f`](#file), [`--file`](#file)    | `stringArray` |         | Build definition file                                                                               |
+| `--load`                            | `bool`        |         | Shorthand for `--set=*.output=type=docker`                                                          |
+| [`--metadata-file`](#metadata-file) | `string`      |         | Write build result metadata to a file                                                               |
+| [`--no-cache`](#no-cache)           | `bool`        |         | Do not use cache when building the image                                                            |
+| [`--print`](#print)                 | `bool`        |         | Print the options without building                                                                  |
+| [`--progress`](#progress)           | `string`      | `auto`  | Set type of progress output (`auto`, `plain`, `tty`, `rawjson`). Use plain to show container output |
+| [`--provenance`](#provenance)       | `string`      |         | Shorthand for `--set=*.attest=type=provenance`                                                      |
+| [`--pull`](#pull)                   | `bool`        |         | Always attempt to pull all referenced images                                                        |
+| `--push`                            | `bool`        |         | Shorthand for `--set=*.output=type=registry`                                                        |
+| [`--sbom`](#sbom)                   | `string`      |         | Shorthand for `--set=*.attest=type=sbom`                                                            |
+| [`--set`](#set)                     | `stringArray` |         | Override target value (e.g., `targetpattern.key=value`)                                             |
 
 
 <!---MARKER_GEN_END-->
@@ -50,6 +52,14 @@ guide for introduction to writing bake files.
 ### <a name="builder"></a> Override the configured builder instance (--builder)
 
 Same as [`buildx --builder`](buildx.md#builder).
+
+### <a name="call"></a> Invoke a frontend method (--call)
+
+Same as [`build --call`](buildx_build.md#call).
+
+#### <a name="check"></a> Call: check (--check)
+
+Same as [`build --check`](buildx_build.md#check).
 
 ### <a name="file"></a> Specify a build definition file (-f, --file)
 
@@ -119,6 +129,7 @@ $ cat metadata.json
 
 ```json
 {
+  "buildx.build.warnings": {},
   "db": {
     "buildx.build.provenance": {},
     "buildx.build.ref": "mybuilder/mybuilder0/0fjb6ubs52xx3vygf6fgdl611",
@@ -160,6 +171,12 @@ $ cat metadata.json
 > * `min` sets minimal provenance (default).
 > * `max` sets full provenance.
 > * `disabled`, `false` or `0` does not set any provenance.
+
+> **Note**
+> 
+> Build warnings (`buildx.build.warnings`) are not included by default. Set the
+> `BUILDX_METADATA_WARNINGS` environment variable to `1` or `true` to
+> include them.
 
 ### <a name="no-cache"></a> Don't use cache when building the image (--no-cache)
 

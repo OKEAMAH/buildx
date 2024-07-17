@@ -9,6 +9,7 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/docker/buildx/builder"
+	"github.com/docker/buildx/util/buildflags"
 	"github.com/docker/buildx/util/cobrautil/completion"
 	"github.com/docker/buildx/util/imagetools"
 	"github.com/docker/buildx/util/progress"
@@ -29,6 +30,7 @@ type createOptions struct {
 	dryrun       bool
 	actionAppend bool
 	progress     string
+	preferIndex  bool
 }
 
 func runCreate(ctx context.Context, dockerCli command.Cli, in createOptions, args []string) error {
@@ -153,7 +155,12 @@ func runCreate(ctx context.Context, dockerCli command.Cli, in createOptions, arg
 		}
 	}
 
-	dt, desc, err := r.Combine(ctx, srcs, in.annotations)
+	annotations, err := buildflags.ParseAnnotations(in.annotations)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse annotations")
+	}
+
+	dt, desc, err := r.Combine(ctx, srcs, annotations, in.preferIndex)
 	if err != nil {
 		return err
 	}
@@ -281,8 +288,9 @@ func createCmd(dockerCli command.Cli, opts RootOptions) *cobra.Command {
 	flags.StringArrayVarP(&options.tags, "tag", "t", []string{}, "Set reference for new image")
 	flags.BoolVar(&options.dryrun, "dry-run", false, "Show final image instead of pushing")
 	flags.BoolVar(&options.actionAppend, "append", false, "Append to existing manifest")
-	flags.StringVar(&options.progress, "progress", "auto", `Set type of progress output ("auto", "plain", "tty"). Use plain to show container output`)
+	flags.StringVar(&options.progress, "progress", "auto", `Set type of progress output ("auto", "plain", "tty", "rawjson"). Use plain to show container output`)
 	flags.StringArrayVarP(&options.annotations, "annotation", "", []string{}, "Add annotation to the image")
+	flags.BoolVar(&options.preferIndex, "prefer-index", true, "When only a single source is specified, prefer outputting an image index or manifest list instead of performing a carbon copy")
 
 	return cmd
 }

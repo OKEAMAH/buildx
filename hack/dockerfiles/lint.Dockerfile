@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.21
+ARG GO_VERSION=1.22
 ARG XX_VERSION=1.3.0
 ARG GOLANGCI_LINT_VERSION=1.57.2
 ARG GOPLS_VERSION=v0.20.0
@@ -13,17 +13,23 @@ FROM --platform=$BUILDPLATFORM tonistiigi/xx:${XX_VERSION} AS xx
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS golang-base
 RUN apk add --no-cache git gcc musl-dev
 
-FROM golang-base AS lint
+FROM golang-base AS lint-base
 ENV GOFLAGS="-buildvcs=false"
 ARG GOLANGCI_LINT_VERSION
 RUN wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v${GOLANGCI_LINT_VERSION}
 COPY --link --from=xx / /
 WORKDIR /go/src/github.com/docker/buildx
 ARG TARGETPLATFORM
+
+FROM lint-base AS lint
 RUN --mount=target=/go/src/github.com/docker/buildx \
     --mount=target=/root/.cache,type=cache,id=lint-cache-$TARGETPLATFORM \
     xx-go --wrap && \
     golangci-lint run
+
+FROM lint-base AS validate-golangci
+RUN --mount=target=/go/src/github.com/docker/buildx \
+  golangci-lint config verify
 
 FROM golang-base AS gopls
 RUN apk add --no-cache git

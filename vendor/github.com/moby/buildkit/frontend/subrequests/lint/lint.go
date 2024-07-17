@@ -39,9 +39,15 @@ type Warning struct {
 	Location    pb.Location `json:"location,omitempty"`
 }
 
+type BuildError struct {
+	Message  string      `json:"message"`
+	Location pb.Location `json:"location"`
+}
+
 type LintResults struct {
 	Warnings []Warning        `json:"warnings"`
 	Sources  []*pb.SourceInfo `json:"sources"`
+	Error    *BuildError      `json:"buildError,omitempty"`
 }
 
 func (results *LintResults) AddSource(sourceMap *llb.SourceMap) int {
@@ -102,7 +108,7 @@ func (results *LintResults) ToResult() (*client.Result, error) {
 	res.AddMeta("result.txt", b.Bytes())
 
 	status := 0
-	if len(results.Warnings) > 0 {
+	if len(results.Warnings) > 0 || results.Error != nil {
 		status = 1
 	}
 	res.AddMeta("result.statuscode", []byte(fmt.Sprintf("%d", status)))
@@ -163,10 +169,12 @@ func PrintLintViolations(dt []byte, w io.Writer) error {
 	})
 
 	for _, warning := range results.Warnings {
-		fmt.Fprintf(w, "\n- %s\n%s\n", warning.Detail, warning.Description)
+		fmt.Fprintf(w, "\nWARNING: %s", warning.RuleName)
 		if warning.URL != "" {
-			fmt.Fprintf(w, "URL: %s\n", warning.URL)
+			fmt.Fprintf(w, " - %s", warning.URL)
 		}
+		fmt.Fprintf(w, "\n%s\n", warning.Detail)
+
 		if warning.Location.SourceIndex < 0 {
 			continue
 		}
@@ -180,6 +188,7 @@ func PrintLintViolations(dt []byte, w io.Writer) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
